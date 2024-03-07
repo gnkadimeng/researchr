@@ -1,0 +1,251 @@
+---
+title: "litsearch_economy"
+author: "JBS"
+date: "2023-10-25"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+library(dplyr)
+library(ggplot2)
+library(ggraph)
+library(igraph)
+library(readr)
+library(litsearchr)
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+setwd("C:/Users/Mpho Nkadimeng/Documents/Projects-2023/Literature_research_tools/search terms")
+naive_results <- import_results(file= 'educ_ener_renewb.ris')
+#naive_results <- import_results(file="scopus_20k.ris")
+```
+
+```{r}
+naive_results[2, "keywords"]
+```
+
+```{r} 
+length(extract_terms(keywords=naive_results[, "keywords"], method="tagged"))
+```
+
+```{r}
+keywords <- extract_terms(keywords=naive_results[, "keywords"], method="tagged", min_n=1)
+
+keywords
+```
+
+
+```{r}
+clinpsy_stopwords <- stopwords::stopwords("en", source = "nltk")
+
+all_stopwords <- c(get_stopwords("English"), clinpsy_stopwords)
+```
+
+```{r}
+title_terms <- extract_terms(
+  text=naive_results[, "title"],
+  method="fakerake",
+  min_freq=3, min_n=2,
+  stopwords=all_stopwords
+)
+
+title_terms
+```
+
+```{r}
+terms <- unique(c(keywords, title_terms))
+```
+
+#### Network 
+```{r}
+docs <- paste(naive_results[, "keywords"], naive_results[, "abstract"])
+```
+
+```{r}
+dfm <- create_dfm(elements=docs, features=terms)
+```
+```{r}
+dfm[1:3, 1:4]
+```
+
+
+```{r}
+g <- create_network(dfm, min_studies=6)
+```
+
+```{r}
+ggraph(g, layout="stress") +
+  coord_fixed() +
+  expand_limits(x=c(-3, 3)) +
+  geom_edge_link(aes(alpha=weight)) +
+  geom_node_point(shape="circle filled", fill="white") +
+  geom_node_text(aes(label=name), hjust="outward", check_overlap=TRUE) +
+  guides(edge_alpha=FALSE)
+```
+
+
+##### Prune 
+
+```{r}
+strengths <- strength(g)
+
+data.frame(term=names(strengths), strength=strengths, row.names=NULL) %>%
+  mutate(rank=rank(strength, ties.method="min")) %>%
+  arrange(strength) ->
+  term_strengths
+
+term_strengths
+```
+
+
+```{r}
+cutoff_fig <- ggplot(term_strengths, aes(x=rank, y=strength, label=term)) +
+  geom_line() +
+  geom_point() +
+  geom_text(data=filter(term_strengths, rank>5), hjust="right", nudge_y=20, check_overlap=TRUE)
+
+cutoff_fig
+```
+
+#### Cumulatively
+```{r}
+cutoff_cum <- find_cutoff(g, method="cumulative", percent=0.8)
+
+cutoff_cum
+```
+
+
+```{r}
+cutoff_fig +
+  geom_hline(yintercept=cutoff_cum, linetype="dashed")
+```
+
+
+```{r}
+get_keywords(reduce_graph(g, cutoff_cum))
+```
+
+
+### Changepoints
+```{r}
+cutoff_change <- find_cutoff(g, method="changepoint", knot_num=3)
+
+cutoff_change
+```
+```{r}
+cutoff_fig +
+  geom_hline(yintercept=cutoff_change, linetype="dashed")
+```
+
+
+```{r}
+g_redux <- reduce_graph(g, cutoff_change[1])
+selected_terms <- get_keywords(g_redux)
+
+selected_terms
+```
+
+```{r}
+write.csv(selected_terms, 'selected_terms.csv', row.names = F)
+getwd()
+```
+
+
+
+
+
+
+
+#### Grouping 
+```{r}
+# Education terms
+education_terms <- c(
+  "acceptance", "acceptance model", "adoption", "attitude", "attitudes",
+  "awareness", "behavior", "behaviour", "communication", "compliance",
+  "determinants", "development", "economic development", "higher education",
+  "information", "innovation", "integration", "knowledge", "learning",
+  "management", "marketing", "motivation", "organization", "panel data",
+  "partial least squares", "perceived usefulness", "perception", "performance",
+  "policy", "satisfaction", "service", "smartpls", "social", "society",
+  "students", "survey", "technology", "technological innovation",
+  "technology acceptance", "technology acceptance model", "trade", "trust",
+  "university"
+)
+
+# Renewable Energy terms
+renewable_energy_terms <- c(
+  "co2", "co2 emission", "co2 emissions", "energy", "energy consumption",
+  "enterprises", "environmental degradation", "environmental sustainability",
+  "natural resource", "renewable", "renewable energy", "renewable energy consumption",
+  "resources", "sem", "smartpls", "technology", "technological innovation",
+  "technology acceptance", "technology acceptance model"
+)
+
+# Sustainability terms
+sustainability_terms <- c(
+  "africa", "carbon emission", "carbon emissions", "challenges", "china",
+  "climate", "climate change", "consumption", "cost", "covid-19",
+  "covid-19 pandemic", "degradation", "developing countries", "economic growth",
+  "environment", "environmental degradation", "environmental quality",
+  "environmental sustainability", "environmental tax", "environmental taxes",
+  "finance", "gdp", "heterogeneity", "income", "indonesia", "norms",
+  "pandemic", "pollution", "quality", "quantile regression", "regulation",
+  "reliability", "research", "satisfaction", "sem", "society",
+  "structural equation model", "structural equation modeling",
+  "structural equation modelling", "survey", "sustainability", "sustainable",
+  "sustainable development", "tax", "tax compliance", "taxation", "taxes",
+  "taxpayer", "taxpayers", "technological innovation", "technology",
+  "technology acceptance", "technology acceptance model", "trade", "trust",
+  "usa", "validity", "value", "carbon dioxide", "empirical evidence",
+  "equation model", "equation modeling", "equation modelling",
+  "factors affecting", "policy implications", "squares structural",
+  "squares structural equation", "squares structural equation modeling",
+  "structural equation"
+)
+
+# Create a list
+my_list <- list(
+  Education = education_terms,
+  "Renewable Energy" = renewable_energy_terms,
+  Sustainability = sustainability_terms
+)
+
+# Print the list
+print(my_list)
+
+```
+
+
+
+```{r}
+# Write the search queries
+my_search <- write_search(
+  groupdata = my_list,
+  languages = "English",
+  exactphrase = TRUE,
+  stemming = TRUE,
+  closure = "left",
+  writesearch = F,
+  verbose = FALSE
+)
+
+```
+
+
+```{r}
+my_search
+```
+
+
